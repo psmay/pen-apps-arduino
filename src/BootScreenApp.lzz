@@ -1,0 +1,66 @@
+
+#hdr
+#include "App.h"
+#include "AppFactory.h"
+#include "PollableTimer.h"
+#end
+
+#src
+#include "SketchMain.h"
+#include "Colors.h"
+
+#define SCREEN provider.screen
+#define GFX SCREEN.Gfx
+#define TOUCH provider.touchSensor
+
+#end
+
+class BootScreenApp : public App
+{
+  private:
+    PollableTimer _timer;
+
+  public:
+    BootScreenApp()
+    {
+      Serial.println("Starting boot screen app");
+
+      SCREEN.setRotation(1);
+
+      coord_t x = SCREEN.width() >> 1,
+              y = SCREEN.height() >> 1;
+
+      GFX.fillScreen(SVG_DARKRED);
+      GFX.setTextColor(WHITE);
+
+      GFX.setTextSize(2);
+      SCREEN.drawCenteredText(F("Welcome"), x, y);
+
+      GFX.setTextSize(1);
+      y += 40;
+      SCREEN.drawCenteredText(F("Tap now to calibrate touch sensor"), x, y);
+      y += 20;
+      SCREEN.drawCenteredText(F("An hw.hgk.us device"), x, y);
+
+      _timer.expireIn(3000);
+      TOUCH.expectTap();
+    }
+
+    void update()
+    {
+      if (TOUCH.tapOccurred()) {
+        Serial.println("Got tap");
+        provider.switchToCalibrationApp();
+      }
+      else if (_timer.isExpired()) {
+        Serial.println("Got timeout");
+        provider.switchToMainApp();
+      }
+    }
+};
+
+class BootScreenAppFactory : public DynamicAppFactory
+{
+  public:
+    App * create() { return new BootScreenApp(); }
+};

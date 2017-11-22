@@ -1,0 +1,589 @@
+
+#hdr
+#include "App.h"
+#include "AppFactory.h"
+#include "PollableTimer.h"
+#include "MappingContext.h"
+#include "HgkAsync.h"
+#end
+
+#src
+#include "SketchMain.h"
+#include "Colors.h"
+#include "MappingRect.h"
+
+#define SCREEN provider.screen
+#define GFX SCREEN.Gfx
+#define TOUCH provider.touchSensor
+
+namespace
+{
+  inline coord_calc_t mul2(coord_calc_t n) { return n << 1; }
+
+  // Use on nonnegative only
+  inline coord_calc_t div2(coord_calc_t n) { return (n + 1) >> 1; }
+  inline coord_calc_t div4(coord_calc_t n) { return (n + 3) >> 2; }
+
+  inline coord_calc_t greatestMultipleOf4(coord_calc_t max) { return max & ~((coord_calc_t)0x3); }
+  inline coord_calc_t oneFourthTruncated(coord_calc_t n) { return n >> 2; }
+  inline coord_calc_t oneHalfTruncated(coord_calc_t n) { return n >> 1; }
+  inline coord_calc_t threeFourthsTruncated(coord_calc_t n) { return oneHalfTruncated(n) + oneFourthTruncated(n); }
+
+  inline coord_t getPartCoordinate(coord_t size, bool early)
+  {
+    return early ? oneFourthTruncated(size) : threeFourthsTruncated(size);
+  }
+
+  void printRect(const MappingRect & rect)
+  {
+    coord_t x0, y0, x1, y1;
+    rect.get(x0, y0, x1, y1);
+    GFX.print(F("LEFT:  ")); GFX.println(x0);
+    GFX.print(F("TOP:   ")); GFX.println(y0);
+    GFX.print(F("RIGHT: ")); GFX.println(x1);
+    GFX.print(F("BOTTOM:")); GFX.println(y1);
+  }
+
+  inline void computeSensorRect(MappingRect & rect, coord_calc_t _2X0, coord_calc_t _2Y0, coord_calc_t _2X1, coord_calc_t _2Y1)
+  {
+    // Meanings of the calculations:
+    // X0, Y0 is the upper-left corner of the inner block.
+    // X1, Y1 is the lower-right corner of the inner block.
+    // _2n is the sum of two samples for n, making its value about 2n.
+    // (So _2X0 = 2 * X0, _2Y1 = 2 * Y1, etc.)
+    //
+    // X1 - X0 is the width of the inner block.
+    // The width of the whole screen is twice the width of the inner block:
+    // width = 2(X1 - X0)
+    //       = 2X1 - 2X0
+    //
+    // The height is analogous:
+    // height = 2(Y1 - Y0)
+    //        = 2Y1 - 2Y0
+    //
+    // The inner block and outer block share a midpoint:
+    // Xmid = (X0 + X1) / 2
+    // Ymid = (Y0 + Y1) / 2
+    // 4Xmid = 2(X0 + X1) = 2X0 + 2X1
+    // 4Ymid = 2(Y0 + Y1) = 2Y0 + 2Y1
+    //
+    // The left of the screen is the midpoint minus half the screen width.
+    // left = Xmid - width/2
+    // 4left = 4Xmid - 4width/2
+    // 4left = 4Xmid - 2width
+    // 4left = 4Xmid - width - width
+    // 4left = (2X0 + 2X1) - (2X1 - 2X0) - width
+    // 4left = 2X0 + 2X1 - 2X1 + 2X0 - width
+    // 4left = 4X0 - width
+    // 4left = 2(2X0) - width
+    //
+    // The top is analogous:
+    // 4top = 2(2Y0) - height
+    //
+    // The other corner of the screen is found trivially:
+    // right = left + width
+    // bottom = top + height
+    coord_calc_t width, height, left, top;
+
+    width = _2X1 - _2X0;
+    height = _2Y1 - _2Y0;
+
+    {
+      coord_calc_t _4left = mul2(_2X0) - width;
+      coord_calc_t _4top = mul2(_2Y0) - height;
+
+      left = div4(_4left);
+      top = div4(_4top);
+    }
+
+    rect.set(
+      (coord_t)left,
+      (coord_t)top,
+      (coord_t)(left + width),
+      (coord_t)(top + height)
+    );
+  }
+
+  inline void printCoords(coord_t a, coord_t b)
+  {
+    Print & p = Serial;
+    p.print("(");
+    p.print(a); p.print(",");
+    p.print(b); p.print(")");
+  }
+
+  inline void printlnCoords(coord_t a, coord_t b)
+  {
+    Print & p = Serial;
+    printCoords(a, b);
+    p.println();
+  }
+
+  inline void printCoords(coord_t a, coord_t b, coord_t c, coord_t d)
+  {
+    Print & p = Serial;
+    p.print("(");
+    p.print(a); p.print(",");
+    p.print(b); p.print(",");
+    p.print(c); p.print(",");
+    p.print(d); p.print(")");
+  }
+
+  inline void printlnCoords(coord_t a, coord_t b, coord_t c, coord_t d)
+  {
+    Print & p = Serial;
+    printCoords(a, b, c, d);
+    p.println();
+  }
+}
+
+namespace SteadyPointGathererStatus
+{
+  enum SteadyPointGathererStatus {
+    DISABLED,
+    WAITING_FOR_PEN_UP,
+    WAITING_FOR_PEN_INITIAL_DOWN,
+    WAITING_FOR_PEN_HOLD,
+    WAITING_FOR_PEN_RETRY_DOWN,
+    FINISHED
+  };
+}
+
+#end
+
+class CalibrationApp : public App
+{
+  private:
+
+    class SteadyPointGatherer
+    {
+      private:
+        PollableTimer _timer;
+        int _msDelay;
+        uint8_t _status;
+        coord_t _x, _y;
+
+        void checkExpiration()
+        {
+          if (_timer.isExpired()) {
+            if (_status == SteadyPointGathererStatus::WAITING_FOR_PEN_HOLD) {
+              _status = SteadyPointGathererStatus::FINISHED;
+            }
+            // No other states involve the timer expiring.
+          }
+        }
+
+        bool restartPenHoldPhase(coord_t x, coord_t y)
+        {
+          _x = x;
+          _y = y;
+          _timer.expireIn(_msDelay);
+          uint8_t oldStatus = _status;
+          _status = SteadyPointGathererStatus::WAITING_FOR_PEN_HOLD;
+          return (oldStatus != _status);
+        }
+
+      public:
+        uint8_t status()
+        {
+          return _status;
+        }
+
+        void reset()
+        {
+          _status = SteadyPointGathererStatus::DISABLED;
+          _timer.unset();
+        }
+
+        void restart(bool initialPenDown, int msDelay = 2000)
+        {
+          reset();
+          _msDelay = msDelay;
+          _status = initialPenDown ?
+                    SteadyPointGathererStatus::WAITING_FOR_PEN_UP :
+                    SteadyPointGathererStatus::WAITING_FOR_PEN_INITIAL_DOWN;
+        }
+
+        bool getPoint(coord_t & x, coord_t & y)
+        {
+			uint8_t oldstatus = _status;
+          checkExpiration();
+			  Serial.print("On getPoint, status started at ");
+			  Serial.print((int)oldstatus);
+			  Serial.print(" and became ");
+			  Serial.println((int)_status);
+
+          if (_status == SteadyPointGathererStatus::FINISHED) {
+            x = _x;
+            y = _y;
+            return true;
+          }
+          return false;
+        }
+
+        bool onPenUp()
+        {
+          checkExpiration();
+
+          switch (_status) {
+            case SteadyPointGathererStatus::WAITING_FOR_PEN_UP:
+              // The pen is now up; proceed.
+              _status = SteadyPointGathererStatus::WAITING_FOR_PEN_INITIAL_DOWN;
+              _timer.unset();
+              return true;
+            case SteadyPointGathererStatus::WAITING_FOR_PEN_HOLD:
+              // The pen was down but is now back up before the hold
+              // completed.
+              _status = SteadyPointGathererStatus::WAITING_FOR_PEN_RETRY_DOWN;
+              _timer.unset();
+              return true;
+          }
+
+          return false;
+        }
+
+        // Returns true if the status changed.
+        bool onPenDownOrDrag(coord_t x, coord_t y)
+        {
+          checkExpiration();
+
+          switch (_status) {
+            case SteadyPointGathererStatus::WAITING_FOR_PEN_INITIAL_DOWN:
+            case SteadyPointGathererStatus::WAITING_FOR_PEN_RETRY_DOWN:
+              // The pen has now changed from up to down status.
+              return restartPenHoldPhase(x, y);
+            case SteadyPointGathererStatus::WAITING_FOR_PEN_HOLD:
+              // The pen was already down, but may have moved.
+              if ((x != _x) || (y != y)) {
+                return restartPenHoldPhase(x, y);
+              }
+              return false;
+          }
+
+          return false;
+        }
+
+		bool nudge() {
+			uint8_t oldstatus = _status;
+			checkExpiration();
+			return (oldstatus == _status);
+		}
+
+        SteadyPointGatherer()
+        {
+          reset();
+        }
+    };
+
+  private:
+    static const coord_t crosshairRadius = 10;
+    static const coord_t dotRadius = 3;
+    static const color_t screenColor = SVG_NAVY;
+    static const color_t paintColor = WHITE;
+    static const color_t dotColor = SVG_LIME;
+
+    PollableTimer tapAndHoldTimer;
+    PollableTimer delayExitTimer;
+
+    SteadyPointGatherer steadyPointGatherer;
+
+	void restartSteadyPointGatherer() {
+		steadyPointGatherer.restart(TOUCH.getPenDown());
+	}
+
+    void updateSteadyPointStatusText()
+    {
+      switch (steadyPointGatherer.status()) {
+        case SteadyPointGathererStatus::WAITING_FOR_PEN_UP:
+          replaceCenterText(F("Lift stylus."));
+          break;
+        case SteadyPointGathererStatus::WAITING_FOR_PEN_INITIAL_DOWN:
+          replaceCenterText(F("Tap and hold stylus on target."));
+          break;
+        case SteadyPointGathererStatus::WAITING_FOR_PEN_HOLD:
+          replaceCenterText(F("Hold the stylus still."));
+          break;
+        case SteadyPointGathererStatus::WAITING_FOR_PEN_RETRY_DOWN:
+          replaceCenterText(F("Try again. Tap and hold stylus on target."));
+          break;
+        case SteadyPointGathererStatus::FINISHED:
+          replaceCenterText(F("Stylus read successfully."));
+          break;
+        default:
+          replaceCenterText(F(""));
+          break;
+      }
+    }
+
+    bool canDrawTestDots;
+
+    void drawDot(coord_t x, coord_t y)
+    {
+      GFX.fillCircle(x, y, dotRadius, dotColor);
+    }
+
+    void drawCrosshair(coord_t x, coord_t y)
+    {
+      SCREEN.drawDoubleCrosshair(x, y, crosshairRadius, paintColor);
+    }
+
+    void getPartCoordinates(coord_t & x, coord_t & y, bool left, bool top)
+    {
+      x = getPartCoordinate(GFX.width(), left);
+      y = getPartCoordinate(GFX.height(), top);
+    }
+
+    void drawPartCrosshair(bool left, bool top)
+    {
+      coord_t x, y;
+      getPartCoordinates(x, y, left, top);
+      drawCrosshair(x, y);
+    }
+
+    void eraseCenterBar(coord_t height)
+    {
+      GFX.fillRect(0, div2(GFX.height()) - (height >> 1), GFX.width(), height, screenColor);
+    }
+
+    void replaceCenterText(const __FlashStringHelper * text, coord_t height = 20)
+    {
+      eraseCenterBar(height);
+      SCREEN.drawCenteredText(text, div2(GFX.width()), div2(GFX.height()));
+    }
+
+    void drawScreen(const __FlashStringHelper * text, bool doDrawCrosshair = false, bool left = true, bool top = true)
+    {
+      clearScreen();
+      replaceCenterText(text);
+      SCREEN.drawCenteredText(text, div2(GFX.width()), div2(GFX.height()));
+      if (doDrawCrosshair) {
+        drawPartCrosshair(left, top);
+      }
+    }
+
+    void clearScreen()
+    {
+      GFX.fillScreen(screenColor);
+      GFX.setTextColor(paintColor);
+    }
+
+    void printSensorRect()
+    {
+      MappingRect rect;
+      TOUCH.getSensorRect(rect);
+      printRect(rect);
+    }
+
+
+    [start_async_pp]
+
+    [class_name] CalibrationApp
+
+    [async_sub] expectTapAsync
+    TOUCH.expectTap();
+    [poll_until] TOUCH.tapOccurred();
+    [end_async_sub]
+
+
+    [async_sub] expectTapAsync
+    [param] coord_t & x
+    [param] coord_t & y
+
+    //TOUCH.expectTap();
+    //[poll_until] TOUCH.tapOccurred($x, $y)
+	$.restartSteadyPointGatherer();
+	[poll_until] $.steadyPointGatherer.getPoint($x, $y)
+
+    [end_async_sub]
+
+
+    [async_sub] collectSampleAsync
+
+    [param] bool left;
+    [param] bool top;
+    [param] coord_calc_t & xa;
+    [param] coord_calc_t & ya;
+
+    [var] coord_t x;
+    [var] coord_t y;
+
+    $.drawScreen(F("Tap center of crosshair."), true, $left, $top);
+    [await] $.expectTapAsync($x, $y);
+    $xa += $x;
+    $ya += $y;
+
+    [end_async_sub]
+
+
+
+//	[async_sub] getSteadyPointAsync
+//
+//	[param] coord_t & x;
+//	[param] coord_t & y;
+//
+//	$.restartSteadyPointWatcher();
+//	[poll_until] $.pollSteadyPointWatcher($x, $y);
+//
+//	[end_async_sub]
+//
+//    [async_sub] collectSampleAsync
+//
+//    [param] bool left;
+//    [param] bool top;
+//    [param] coord_calc_t & xa;
+//    [param] coord_calc_t & ya;
+//
+//    [var] coord_t x;
+//    [var] coord_t y;
+//
+//    $.drawScreen(F("Tap center of crosshair."), true, $left, $top);
+//    [await] $.getSteadyPointAsync($x, $y);
+//    $xa += $x;
+//    $ya += $y;
+//
+//    [end_async_sub]
+
+
+    [async_sub] runCalibrationAsync
+
+    [var] coord_calc_t _2X0;
+    [var] coord_calc_t _2Y0;
+    [var] coord_calc_t _2X1;
+    [var] coord_calc_t _2Y1;
+
+    $.canDrawTestDots = false;
+
+    $_2X0 = 0;
+    $_2Y0 = 0;
+    $_2X1 = 0;
+    $_2Y1 = 0;
+
+    $.drawScreen(F("Tap screen to start."));
+    GFX.setCursor(0, 0);
+    GFX.setTextWrap(true);
+    GFX.println("Current settings:");
+    $.printSensorRect();
+    GFX.println(F("Press reset to keep"));
+    GFX.println(F("current values."));
+
+    [await] $.expectTapAsync()
+
+    [await] $.collectSampleAsync(true, true, $_2X0, $_2Y0);
+    [await] $.collectSampleAsync(false, true, $_2X1, $_2Y0);
+    [await] $.collectSampleAsync(false, false, $_2X1, $_2Y1);
+    [await] $.collectSampleAsync(true, false, $_2X0, $_2Y1);
+
+
+    $.clearScreen();
+    GFX.setCursor(0, 0);
+    GFX.setTextWrap(true);
+    {
+      MappingRect sensorRect, screenRect;
+
+      computeSensorRect(sensorRect, $_2X0, $_2Y0, $_2X1, $_2Y1);
+      TOUCH.setSensorRect(sensorRect);
+
+      SCREEN.getRect(screenRect);
+      TOUCH.setScreenRect(screenRect, 0, true);
+
+      //$.ourContext.setInput(sensorRect);
+      //$.ourContext.setOutput(screenRect, 0);
+    }
+    GFX.println("New settings:");
+    $.printSensorRect();
+
+    $.canDrawTestDots = true;
+
+    GFX.println("Tap screen to make dots appear.");
+    GFX.println("Tap in various locations to check calibration.");
+    GFX.println("If correct:");
+    GFX.println("    Tap and hold for 5 seconds ");
+    GFX.println("    to save settings and exit.");
+    GFX.println("If incorrect:");
+    GFX.println("    Press reset to discard new");
+    GFX.println("    settings and restart.");
+    $.tapAndHoldTimer.unset();
+
+    [poll_until] $.tapAndHoldTimer.isExpired()
+
+    $.clearScreen();
+    GFX.setCursor(0, 0);
+    GFX.setTextWrap(true);
+    $.printSensorRect();
+    GFX.print("Saving to EEPROM...");
+    TOUCH.saveSensorRect();
+    GFX.println("OK.");
+    GFX.println("Returning to boot screen...");
+    $.delayExitTimer.expireIn(3000);
+
+    [poll_until] $.delayExitTimer.isExpired()
+
+    provider.switchToBootScreenApp();
+
+    [end_async_sub]
+
+
+    [async_sub] runAsync
+    [await] $.runCalibrationAsync();
+    [end_async_sub]
+    [end_async_pp]
+
+    HgkAsync::AsyncTaskRunner runAsyncRunner;
+
+  public:
+    CalibrationApp()
+    {
+      canDrawTestDots = false;
+      SCREEN.setRotation(0);
+      TOUCH.usingRawCoordinates(true);
+      runAsyncRunner.begin(runAsync());
+    }
+
+    void update()
+    {
+      runAsyncRunner.finish();
+    }
+
+    void onPenDown(coord_t x, coord_t y)
+    {
+      if (steadyPointGatherer.onPenDownOrDrag(x, y)) {
+        updateSteadyPointStatusText();
+      }
+
+      Serial.print("CA got pendown ");
+      Serial.print(x); Serial.print(" ");
+      Serial.print(y); Serial.println();
+      tapAndHoldTimer.expireIn(5000);
+      if (canDrawTestDots) {
+        Serial.println("Drawing test dot");
+        drawDot(x, y);
+      }
+    }
+
+    void onPenDrag(coord_t fromX, coord_t fromY, coord_t toX, coord_t toY)
+    {
+      //updateSteadyPointWatcher(toX, toY, true);
+      if (steadyPointGatherer.onPenDownOrDrag(toX, toY)) {
+
+        updateSteadyPointStatusText();
+      }
+    }
+
+    void onPenUp(coord_t x, coord_t y)
+    {
+      if (steadyPointGatherer.onPenUp()) {
+        updateSteadyPointStatusText();
+      }
+      Serial.println("CA got penup");
+      Serial.print(x); Serial.print(" ");
+      Serial.print(y); Serial.println();
+      tapAndHoldTimer.unset();
+    }
+};
+
+
+class CalibrationAppFactory : public DynamicAppFactory
+{
+  public:
+    App * create() { return new CalibrationApp(); }
+};

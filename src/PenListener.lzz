@@ -1,0 +1,15 @@
+
+#hdr
+#include "Config.h"
+#end
+
+class PenListener
+{
+  public:
+    virtual void onPenDown(coord_t x, coord_t y) {}
+    virtual void onPenUp(coord_t x, coord_t y) {}
+    virtual void onPenDrag(coord_t fromX, coord_t fromY, coord_t toX, coord_t toY) {}
+    virtual void onPenExpectedTap(coord_t x, coord_t y) {}
+
+	static PenListener NoopPenListener;
+};

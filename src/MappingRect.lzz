@@ -1,0 +1,202 @@
+
+#hdr
+#include "Config.h"
+#end
+
+namespace
+{
+  inline void swap(coord_t & a, coord_t & b)
+  {
+    coord_t t = a;
+    a = b;
+    b = t;
+  }
+
+  inline coord_t farCoord(coord_t c0, coord_t size)
+  {
+    return c0 + size + (size > 0 ? -1 : 1);
+  }
+
+  inline coord_t directedSize(coord_t farMinusNear)
+  {
+    return farMinusNear + (farMinusNear > 0 ? 1 : -1);
+  }
+
+  inline bool intersects(coord_t value, coord_t c0, coord_t c1)
+  {
+    if (c1 < c0) {
+      swap(c0, c1);
+    }
+    return (value >= c0) && (value <= c1);
+  }
+}
+
+class MappingRect
+{
+  private:
+    coord_t _x0, _y0, _x1, _y1;
+
+  public:
+    coord_t x0() const { return _x0; }
+    coord_t y0() const { return _y0; }
+    coord_t x1() const { return _x1; }
+    coord_t y1() const { return _y1; }
+
+    void x0(coord_t value) { _x0 = value; }
+    void y0(coord_t value) { _y0 = value; }
+    void x1(coord_t value) { _x1 = value; }
+    void y1(coord_t value) { _y1 = value; }
+
+    void set(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
+    {
+      _x0 = x0;
+      _y0 = y0;
+      _x1 = x1;
+      _y1 = y1;
+    }
+
+    void set(const MappingRect & rect)
+    {
+      coord_t a, b, c, d;
+      rect.get(a, b, c, d);
+      set(a, b, c, d);
+    }
+
+    void increment(coord_t dx0, coord_t dy0, coord_t dx1, coord_t dy1)
+    {
+      _x0 += dx0;
+      _y0 += dy0;
+      _x1 += dx1;
+      _y1 += dy1;
+    }
+
+    void get(coord_t & x0, coord_t & y0, coord_t & x1, coord_t & y1) const
+    {
+      x0 = _x0;
+      y0 = _y0;
+      x1 = _x1;
+      y1 = _y1;
+    }
+
+    void width() { return abs(_x1 - _x0) + 1; }
+    void directedWidth() { directedSize(_x1 - _x0); }
+    void height() { return abs(_y1 - _y0) + 1; }
+    void directedHeight() { directedSize(_y1 - _y0); }
+
+    void width(coord_t directedWidth)
+    {
+      if (directedWidth == 0) return;
+      _x1 = farCoord(_x0, directedWidth);
+    }
+
+    void height(coord_t directedHeight)
+    {
+      if (directedHeight == 0) return;
+      _y1 = farCoord(_y0, directedHeight);
+    }
+
+    void size(coord_t directedWidth, coord_t directedHeight)
+    {
+      if (directedWidth == 0 || directedHeight == 0) return;
+      _x1 = farCoord(_x0, directedWidth);
+      _y1 = farCoord(_y0, directedHeight);
+    }
+
+    void resetSize(coord_t directedWidth, coord_t directedHeight, coord_t x0 = 0, coord_t y0 = 0)
+    {
+      if (directedWidth == 0 || directedHeight == 0) return;
+      _x0 = x0;
+      _y0 = y0;
+      _x1 = farCoord(_x0, directedWidth);
+      _y1 = farCoord(_y0, directedHeight);
+    }
+
+    void rotate(int8_t quarterTurnsClockwise)
+    {
+      switch (quarterTurnsClockwise & 0x3) {
+        case 0:
+          //set(_x0, _y0, _x1, _y1);
+          break;
+        case 1:
+          set(_y0, _x1, _y1, _x0);
+          break;
+        case 2:
+          set(_x1, _y1, _x0, _y0);
+          break;
+        case 3:
+          set(_y1, _x0, _y0, _x1);
+          break;
+      }
+    }
+
+    bool intersectsX(coord_t x) const
+    {
+      return intersects(x, _x0, _x1);
+    }
+
+    bool intersectsY(coord_t y) const
+    {
+      return intersects(y, _y0, _y1);
+    }
+
+    bool contains(coord_t x, coord_t y) const
+    {
+      return intersectsX(x) && intersectsY(y);
+    }
+
+    void mapPoint(coord_t & x, coord_t & y, const MappingRect & targetRect) const
+    {
+      x = map(x, _x0, _x1, targetRect._x0, targetRect._x1);
+      y = map(y, _y0, _y1, targetRect._y0, targetRect._y1);
+    }
+
+    void mapPoint(coord_t & x, coord_t & y, const MappingRect & targetRect, bool swapInputs, bool swapOutputs) const
+    {
+      coord_t a = x, b = y;
+
+      if (swapInputs) {
+        swap(a, b);
+      }
+
+      mapPoint(a, b, targetRect);
+
+      if (swapOutputs) {
+        swap(a, b);
+      }
+
+      x = a;
+      y = b;
+    }
+
+    void mapPoint(coord_t & x, coord_t & y, const MappingRect & targetRect, int8_t quarterTurnsClockwise) const
+    {
+      MappingRect rotatedTargetRect = targetRect;
+      rotatedTargetRect.rotate(4 - quarterTurnsClockwise);
+      bool onSide = (quarterTurnsClockwise & 0x1) != 0;
+
+      mapPoint(x, y, rotatedTargetRect, false, onSide);
+    }
+
+    MappingRect(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
+    {
+      set(x0, y0, x1, y1);
+    }
+
+    MappingRect()
+    {
+      set(0, 0, 0, 0);
+    }
+
+    MappingRect(const MappingRect & rect)
+    {
+      set(rect);
+    }
+
+    static MappingRect bySize(coord_t directedWidth, coord_t directedHeight, coord_t x0 = 0, coord_t y0 = 0)
+    {
+      MappingRect rect;
+      rect.resetSize(directedWidth, directedHeight, x0, y0);
+      return rect;
+    }
+
+};

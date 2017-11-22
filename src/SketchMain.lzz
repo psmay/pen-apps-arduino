@@ -1,0 +1,16 @@
+
+#hdr
+#include "Provider.h"
+#end
+
+Provider provider;
+
+inline void sketchSetup()
+{
+  provider.begin();
+}
+
+inline void sketchLoop()
+{
+  provider.update();
+}

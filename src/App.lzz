@@ -1,0 +1,14 @@
+
+#hdr
+#include "PenListener.h"
+#end
+
+class App : public PenListener
+{
+  public:
+    App() {}
+    virtual ~App() {}
+    virtual void update() {}
+
+	static App NoopApp;
+};

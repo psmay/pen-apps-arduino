@@ -1,0 +1,157 @@
+
+#hdr
+#include "Arduino.h"
+#end
+
+#src
+#include <EEPROM.h>
+
+#define BYTE0(v) ((uint8_t)(v))
+#define BYTE1(v) ((uint8_t)((v) >> 8))
+#define BYTE2(v) ((uint8_t)((v) >> 16))
+#define BYTE3(v) ((uint8_t)((v) >> 24))
+#define PACK32LE(b0, b1, b2, b3) ( \
+	(((uint32_t)(b3)) << 24) | \
+	(((uint32_t)(b2)) << 16) | \
+	(((uint32_t)(b1)) << 8) | \
+	((uint32_t)(b0)) \
+	)
+#define PACK24LE(b0, b1, b2) (PACK32LE(b0, b1, b2, 0))
+#define PACK16LE(b0, b1) ( \
+	(((uint16_t)(b1)) << 8) | \
+	((uint16_t)(b0)) \
+	)
+
+#end
+
+namespace EepromUtil
+{
+  void updateBytes(int address, uint8_t b0)
+  {
+    EEPROM.update(address, b0);
+  }
+
+  void updateBytes(int address, uint8_t b0, uint8_t b1)
+  {
+    EEPROM.update(address, b0);
+    EEPROM.update(address + 1, b1);
+  }
+
+  void updateBytes(int address, uint8_t b0, uint8_t b1, uint8_t b2)
+  {
+    EEPROM.update(address, b0);
+    EEPROM.update(address + 1, b1);
+    EEPROM.update(address + 2, b2);
+  }
+
+  void updateBytes(int address, uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)
+  {
+    EEPROM.update(address, b0);
+    EEPROM.update(address + 1, b1);
+    EEPROM.update(address + 2, b2);
+    EEPROM.update(address + 3, b3);
+  }
+
+  void update16BE(int address, uint16_t value)
+  {
+    updateBytes(address,
+                BYTE1(value),
+                BYTE0(value)
+               );
+  }
+
+  void update16LE(int address, uint16_t value)
+  {
+    updateBytes(address,
+                BYTE0(value),
+                BYTE1(value)
+               );
+  }
+
+  void update24BE(int address, uint32_t value)
+  {
+    updateBytes(address,
+                BYTE2(value),
+                BYTE1(value),
+                BYTE0(value)
+               );
+  }
+
+  void update24LE(int address, uint32_t value)
+  {
+    updateBytes(address,
+                BYTE0(value),
+                BYTE1(value),
+                BYTE2(value)
+               );
+  }
+
+  void update32BE(int address, uint32_t value)
+  {
+    updateBytes(address,
+                BYTE3(value),
+                BYTE2(value),
+                BYTE1(value),
+                BYTE0(value)
+               );
+  }
+
+  void update32LE(int address, uint32_t value)
+  {
+    updateBytes(address,
+                BYTE0(value),
+                BYTE1(value),
+                BYTE2(value),
+                BYTE3(value)
+               );
+  }
+
+
+  uint16_t get16BE(int address)
+  {
+    uint8_t b1 = EEPROM.read(address);
+    uint8_t b0 = EEPROM.read(address + 1);
+    return PACK16LE(b0, b1);
+  }
+
+  uint16_t get16LE(int address)
+  {
+    uint8_t b0 = EEPROM.read(address);
+    uint8_t b1 = EEPROM.read(address + 1);
+    return PACK16LE(b0, b1);
+  }
+
+  uint32_t get24BE(int address)
+  {
+    uint8_t b2 = EEPROM.read(address);
+    uint8_t b1 = EEPROM.read(address + 1);
+    uint8_t b0 = EEPROM.read(address + 2);
+    return PACK24LE(b0, b1, b2);
+  }
+
+  uint32_t get24LE(int address)
+  {
+    uint8_t b0 = EEPROM.read(address);
+    uint8_t b1 = EEPROM.read(address + 1);
+    uint8_t b2 = EEPROM.read(address + 2);
+    return PACK24LE(b0, b1, b2);
+  }
+
+  uint32_t get32BE(int address)
+  {
+    uint8_t b3 = EEPROM.read(address);
+    uint8_t b2 = EEPROM.read(address + 1);
+    uint8_t b1 = EEPROM.read(address + 2);
+    uint8_t b0 = EEPROM.read(address + 3);
+    return PACK32LE(b0, b1, b2, b3);
+  }
+
+  uint32_t get32LE(int address)
+  {
+    uint8_t b0 = EEPROM.read(address);
+    uint8_t b1 = EEPROM.read(address + 1);
+    uint8_t b2 = EEPROM.read(address + 2);
+    uint8_t b3 = EEPROM.read(address + 3);
+    return PACK32LE(b0, b1, b2, b3);
+  }
+}

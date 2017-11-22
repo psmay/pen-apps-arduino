@@ -1,0 +1,28 @@
+
+namespace
+{
+  inline int compareAsLong(unsigned long a, unsigned long b)
+  {
+    // compareAsLong() determines the ordering of two unsigned longs as if
+    // they were signed. This is useful for checking whether or not a
+    // given millisecond has passed according to millis(). The Arduino doc
+    // says the unsigned long type returned by millis() overflows around
+    // 50 days' worth of milliseconds; interpreted as signed, the overflow
+    // would be around 25 days. So, as long as the interval itself is less
+    // than that *and* the timeout is checked more frequently than that,
+    // this will work fine.
+    long diff = (long)(a - b);
+    return (diff < 0) ? -1 : (diff > 0) ? 1 : 0;
+  }
+}
+
+namespace SimpleTimeouts
+{
+  bool timePassed(unsigned long deadlineMillis, unsigned long nowMillis)
+  {
+    // Returns true if deadlineMillis is on or earlier than nowMillis. (As
+    // mentioned above, very large intervals will cause this not to work
+    // correctly.)
+    return (compareAsLong(deadlineMillis, nowMillis) <= 0);
+  }
+}

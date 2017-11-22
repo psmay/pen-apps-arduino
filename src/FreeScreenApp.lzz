@@ -1,0 +1,154 @@
+
+#hdr
+#include "App.h"
+#include "AppFactory.h"
+#include "PollableTimer.h"
+#end
+
+#src
+#include "SketchMain.h"
+#include "Colors.h"
+
+#define SCREEN provider.screen
+#define GFX SCREEN.Gfx
+#define TOUCH provider.touchSensor
+
+namespace
+{
+  const color_t colors[] = {
+    BLACK,
+    BROWN,
+    RED,
+    ORANGE,
+    YELLOW,
+    GREEN,
+    BLUE,
+    PURPLE,
+    GRAY,
+    WHITE
+  };
+
+  const uint8_t colorsCount = sizeof(colors) / sizeof(*colors);
+
+  inline uint8_t fixColorIndex(uint8_t index)
+  {
+    return index % colorsCount;
+  }
+}
+
+namespace
+{
+  void printRect(const MappingRect & rect)
+  {
+    coord_t x0, y0, x1, y1;
+    rect.get(x0, y0, x1, y1);
+    GFX.print(F("LEFT:  ")); GFX.println(x0);
+    GFX.print(F("TOP:   ")); GFX.println(y0);
+    GFX.print(F("RIGHT: ")); GFX.println(x1);
+    GFX.print(F("BOTTOM:")); GFX.println(y1);
+  }
+
+  void printSensorRect()
+  {
+    MappingRect rect;
+    TOUCH.getSensorRect(rect);
+    printRect(rect);
+  }
+
+}
+
+#end
+
+class FreeScreenApp : public App
+{
+  private:
+    static const coord_t dotRadius = 3;
+
+    uint8_t paintColorIndex;
+
+    color_t getPaintColor()
+    {
+      return colors[paintColorIndex];
+    }
+
+    void drawDot(coord_t x, coord_t y)
+    {
+      GFX.fillCircle(x, y, dotRadius, getPaintColor());
+    }
+
+  public:
+    FreeScreenApp()
+    {
+      TOUCH.usingRawCoordinates(true);
+      paintColorIndex = fixColorIndex(0);
+
+	  int rotation = 0;
+
+      SCREEN.setRotation(rotation);
+		{
+			MappingRect screenRect;
+			SCREEN.getRect(screenRect);
+			TOUCH.setScreenRect(screenRect, rotation, true);
+		}
+	  
+
+      coord_t x = SCREEN.width() >> 1,
+              y = SCREEN.height() >> 1;
+
+      GFX.fillScreen(WHITE);
+      GFX.setTextColor(BLACK);
+
+      GFX.setTextSize(2);
+      SCREEN.drawCenteredText(F("Free draw"), x, y);
+
+      GFX.setTextSize(1);
+      y += 40;
+      SCREEN.drawCenteredText(F("Tap and scribble to test sensor"), x, y);
+      y += 20;
+      SCREEN.drawCenteredText(F("Press reset to exit"), x, y);
+
+	  GFX.setCursor(0, 0);
+	  GFX.setTextWrap(true);
+	  printSensorRect();
+    }
+
+
+    void onPenDown(coord_t x, coord_t y)
+    {
+      Serial.print("PD ");
+      Serial.print(x);
+      Serial.print(" ");
+      Serial.println(y);
+      drawDot(x, y);
+    }
+
+    void onPenUp(coord_t x, coord_t y)
+    {
+      Serial.print("PU ");
+      Serial.print(x);
+      Serial.print(" ");
+      Serial.println(y);
+      paintColorIndex = fixColorIndex(paintColorIndex + 1);
+    }
+
+    void onPenDrag(coord_t fromX, coord_t fromY, coord_t toX, coord_t toY)
+    {
+      Serial.print("PL ");
+      Serial.print(toX);
+      Serial.print(" ");
+      Serial.println(toY);
+
+      GFX.drawLine(fromX, fromY, toX, toY, getPaintColor());
+      drawDot(toX, toY);
+    }
+
+    void update()
+    {
+    }
+};
+
+class FreeScreenAppFactory : public DynamicAppFactory
+{
+  public:
+    App * create() { return new FreeScreenApp(); }
+};

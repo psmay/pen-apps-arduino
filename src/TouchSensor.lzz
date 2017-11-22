@@ -1,0 +1,341 @@
+
+#hdr
+#include "Arduino.h"
+#include "Config.h"
+#include "PollableTimer.h"
+#include <TouchScreen.h>
+#include "MappingRect.h"
+#include "MappingContext.h"
+#include "PenListener.h"
+#end
+
+
+#src
+
+#define MINPRESSURE 10
+#define MAXPRESSURE 1000
+
+// Must be analog pins
+#define YP A3
+#define XM A2
+
+// May be digital pins
+#define YM 9
+#define XP 8
+
+// The resistance between X+ and X- in ohms
+#define FULL_X_RESISTANCE 300
+
+#define DEBOUNCE_TIME 10
+
+
+#define TAP_STATE_WAIT_UP1 3
+#define TAP_STATE_WAIT_DOWN 2
+#define TAP_STATE_WAIT_UP2 1
+#define TAP_STATE_COMPLETE 0
+#define TAP_STATE_NOT_EXPECTING 255
+
+// One of our screens gives spurious 0 readings for z.
+#define NUMBER_OF_ZERO_Z_READINGS_TO_DISCARD 5
+
+
+#end
+
+static inline bool shouldAdvanceTap(uint8_t tapState, bool penDown)
+{
+  switch (tapState) {
+    case TAP_STATE_WAIT_UP1:
+    case TAP_STATE_WAIT_UP2:
+      return !penDown;
+    case TAP_STATE_WAIT_DOWN:
+      return penDown;
+    default:
+      return false;
+  }
+}
+
+class TouchSensor
+{
+
+  private:
+    TouchScreen _ts;
+    PenListener * _penListener;
+    MappingContext _mappingContext;
+    bool _usingRawCoordinates;
+    bool _penDown;
+    PollableTimer _penDownDebounce;
+    coord_t _x, _y;
+    coord_t _tapX, _tapY;
+    uint8_t _tapState;
+
+    bool _lastReadingWasZ;
+    uint8_t _zeroZReadingsLeftToDiscard;
+
+    TSPoint getSample()
+    {
+      digitalWrite(13, HIGH); //XXX Does this do anything except light LED?
+      TSPoint p = _ts.getPoint();
+      digitalWrite(13, LOW); //XXX Does this do anything except turn off LED?
+#if 0
+      Serial.print("(");
+      Serial.print(p.x);
+      Serial.print(",");
+      Serial.print(p.y);
+      Serial.print(",");
+      Serial.print(p.z);
+      Serial.print(")");
+#endif
+
+      //pinMode(XP, OUTPUT);
+      pinMode(XM, OUTPUT);
+      pinMode(YP, OUTPUT);
+      //pinMode(YM, OUTPUT);
+
+      return p;
+    }
+
+    bool updatePenDown(bool sensedPenDown)
+    {
+      // Updates the state that determines whether the pen is down.
+      // Returns true iff the pen state changed.
+      if (_penDown == sensedPenDown) {
+        _penDownDebounce.unset();
+        return false;
+      }
+      else {
+        if (_penDownDebounce.isSet()) {
+          if (_penDownDebounce.isExpired()) {
+            _penDown = sensedPenDown;
+            return true;
+          }
+        }
+        else {
+          _penDownDebounce.expireIn(DEBOUNCE_TIME);
+        }
+        return false;
+      }
+    }
+
+    bool penDownIsStable()
+    {
+      return !_penDownDebounce.isRunning();
+    }
+
+    bool updateTapState()
+    {
+      bool change = shouldAdvanceTap(_tapState, _penDown);
+      if (change) {
+        --_tapState;
+        if (_tapState == TAP_STATE_COMPLETE) {
+          _tapX = _x;
+          _tapY = _y;
+          _penListener->onPenExpectedTap(_tapX, _tapY);
+        }
+      }
+    }
+
+    bool sensorRectContains(coord_t x, coord_t y)
+    {
+      MappingRect sensorRect;
+      _mappingContext.getInput(sensorRect);
+      return sensorRect.contains(x, y);
+    }
+
+
+  public:
+    TouchSensor() :
+      _ts(XP, YP, XM, YM, FULL_X_RESISTANCE),
+      _penDown(false),
+      _usingRawCoordinates(true),
+      _penListener(&PenListener::NoopPenListener),
+      _tapState(TAP_STATE_NOT_EXPECTING),
+      _lastReadingWasZ(false),
+      _zeroZReadingsLeftToDiscard(0)
+    {
+      loadSensorRect();
+    }
+
+    ~TouchSensor() {}
+
+
+    void expectTap()
+    {
+      _tapState = TAP_STATE_WAIT_UP1;
+    }
+
+    void clearTap()
+    {
+      _tapState = TAP_STATE_NOT_EXPECTING;
+    }
+
+    bool tapOccurred(bool clearIfOccurred = true)
+    {
+      if (_tapState == TAP_STATE_COMPLETE) {
+        if (clearIfOccurred) {
+          clearTap();
+        }
+        return true;
+      }
+      return false;
+    }
+
+    bool tapOccurred(coord_t & x, coord_t & y, bool clearIfOccurred = true)
+    {
+      if (_tapState == TAP_STATE_COMPLETE) {
+        x = _tapX;
+        y = _tapY;
+        if (clearIfOccurred) {
+          clearTap();
+        }
+        return true;
+      }
+      return false;
+    }
+
+    void setPenListener(PenListener & penListener)
+    {
+      _penListener = &penListener;
+    }
+
+    void clearPenListener()
+    {
+      _penListener = &PenListener::NoopPenListener;
+    }
+
+    void getSensorRect(MappingRect & sensorRectDest)
+    {
+      _mappingContext.getInput(sensorRectDest);
+    }
+
+    void setSensorRect(const MappingRect & sensorRect)
+    {
+      _mappingContext.setInput(sensorRect);
+    }
+
+    void loadSensorRect()
+    {
+      coord_t x0, y0, x1, y1;
+      SensorEeprom::get(x0, y0, x1, y1);
+      MappingRect sensorRect(x0, y0, x1, y1);
+      setSensorRect(sensorRect);
+    }
+
+    void saveSensorRect()
+    {
+      coord_t x0, y0, x1, y1;
+      MappingRect sensorRect;
+      _mappingContext.getInput(sensorRect);
+      sensorRect.get(x0, y0, x1, y1);
+      SensorEeprom::update(x0, y0, x1, y1);
+    }
+
+    void setScreenRect(const MappingRect & screenRect, int8_t screenOrientation = 0, bool enableMapping = true)
+    {
+      _mappingContext.setOutput(screenRect, screenOrientation);
+      if (enableMapping) {
+        usingRawCoordinates(false);
+      }
+    }
+
+    bool usingRawCoordinates() { return _usingRawCoordinates; }
+
+    // Using raw coordinates causes readings to be passed directly from the
+    // sensor instead of being mapped to the screen rect. It also keeps
+    // readings outside the defined sensor rectangle from being discarded.
+    // In general, this should be enabled while calibrating, or disabled
+    // otherwise.
+    //
+    // Note: This setting is intended to be modified while updates from the
+    // sensor are not currently being used (i.e., between apps). Switching
+    // from raw to mapped or vice versa will interrupt a drag in progress,
+    // if any, in order to prevent the mixing of coordinates between systems.
+    // A spurious pen-up event.
+    void usingRawCoordinates(bool raw)
+    {
+      if (raw != _usingRawCoordinates) {
+        _usingRawCoordinates = raw;
+        _penDown = false;
+        _penDownDebounce.unset();
+      }
+    }
+
+    void getPosition(coord_t & x, coord_t & y, bool & penDown)
+    {
+      x = _x;
+      y = _y;
+      penDown = _penDown;
+    }
+
+    bool getPenDown()
+    {
+      return _penDown;
+    }
+
+    void update()
+    {
+      TSPoint p = getSample();
+
+      if (p.z == 0) {
+        if (!_lastReadingWasZ) {
+          _lastReadingWasZ = true;
+          _zeroZReadingsLeftToDiscard = NUMBER_OF_ZERO_Z_READINGS_TO_DISCARD;
+        }
+        if (_zeroZReadingsLeftToDiscard > 0) {
+          --_zeroZReadingsLeftToDiscard;
+          return;
+        }
+      }
+      else {
+        _lastReadingWasZ = false;
+      }
+
+      bool sensedPenDown = (p.z >= MINPRESSURE && p.z <= MAXPRESSURE);
+
+      bool penDownChanged = updatePenDown(sensedPenDown);
+
+      // No movement is reported while debouncing
+      if (!penDownIsStable()) {
+        return;
+      }
+
+      updateTapState();
+
+      if (_penDown) {
+        bool isValidPoint = _usingRawCoordinates ? true : sensorRectContains(p.x, p.y);
+
+        if (isValidPoint) {
+
+          coord_t x = p.x, y = p.y;
+          if (!_usingRawCoordinates) {
+            _mappingContext.mapPoint(x, y);
+          }
+
+          if (penDownChanged) {
+            _penListener->onPenDown(x, y);
+          }
+          else {
+            if (abs(x - _x) < 3 && abs(y - _y) < 3) {
+              // Don't report drag operation if the pen hasn't moved
+              return;
+            }
+            _penListener->onPenDrag(_x, _y, x, y);
+          }
+
+          // Update current point
+          _x = x;
+          _y = y;
+        }
+      }
+      else {
+        // Pen up
+        if (penDownChanged) {
+          _penListener->onPenUp(_x, _y);
+        }
+        else {
+          // No change
+          return;
+        }
+      }
+
+    }
+};

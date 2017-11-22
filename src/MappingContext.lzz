@@ -1,0 +1,74 @@
+
+#hdr
+#include "Config.h"
+#include "MappingRect.h"
+#end
+
+namespace
+{
+  inline void swap(coord_t & a, coord_t & b)
+  {
+    coord_t t = a;
+    a = b;
+    b = t;
+  }
+}
+
+class MappingContext
+{
+  private:
+    MappingRect _inputRect, _rotatedOutputRect;
+    bool _swapOutputs;
+
+  public:
+    MappingContext(const MappingRect & inputRect, const MappingRect & outputRect, int8_t outputOrientation)
+    {
+      setInput(inputRect);
+      setOutput(outputRect, outputOrientation);
+    }
+
+    MappingContext()
+    {
+      MappingRect defaultRect;
+      setInput(defaultRect);
+      setOutput(defaultRect, 0);
+    }
+
+    void setInput(const MappingRect & inputRect)
+    {
+      _inputRect = inputRect;
+    }
+
+    MappingRect getInput()
+    {
+      return _inputRect;
+    }
+
+    void getInput(MappingRect & inputRectDest)
+    {
+      inputRectDest = _inputRect;
+    }
+
+    void setOutput(const MappingRect & outputRect, int8_t outputOrientation)
+    {
+      MappingRect rect = outputRect;
+      rect.rotate(4 - outputOrientation);
+      _rotatedOutputRect = rect;
+      _swapOutputs = (outputOrientation & 0x1) != 0;
+    }
+
+    MappingRect getRotatedOutput()
+    {
+      return _rotatedOutputRect;
+    }
+
+    void getRotatedOutput(MappingRect & rotatedOutputRectDest)
+    {
+      rotatedOutputRectDest = _rotatedOutputRect;
+    }
+
+    void mapPoint(coord_t & x, coord_t & y)
+    {
+      _inputRect.mapPoint(x, y, _rotatedOutputRect, false, _swapOutputs);
+    }
+};

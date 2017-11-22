@@ -1,0 +1,31 @@
+
+#hdr
+#include "App.h"
+#end
+
+class AppFactory
+{
+  public:
+    virtual App * create() = 0;
+    virtual void destroy(App * app) = 0;
+};
+
+class StaticAppFactory : public AppFactory
+{
+  public:
+    void destroy(App * app) {}
+};
+
+class DynamicAppFactory : public AppFactory
+{
+  public:
+    void destroy(App * app) { delete app; }
+};
+
+class NoopAppFactory : public StaticAppFactory
+{
+  public:
+    App * create() { return &App::NoopApp; }
+    static NoopAppFactory Instance;
+};
+

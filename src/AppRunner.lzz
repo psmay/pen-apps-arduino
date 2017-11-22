@@ -1,0 +1,79 @@
+
+#hdr
+#include "App.h"
+#include "AppFactory.h"
+#end
+
+#src
+#include "SketchMain.h"
+#define NOOP_APP (App::NoopApp)
+#define NOOP_APP_FACTORY (NoopAppFactory::Instance)
+#end
+
+
+class AppRunner
+{
+  private:
+    AppFactory * _activeAppFactory;
+    App * _activeApp;
+
+    void updatePenListener()
+    {
+      provider.touchSensor.setPenListener(*_activeApp);
+    }
+
+    void hardResetAppAndFactory()
+    {
+      _activeAppFactory = &NOOP_APP_FACTORY;
+      _activeApp = NOOP_APP_FACTORY.create();
+      updatePenListener();
+    }
+
+    bool activeAppFactoryIsAlready(AppFactory & appFactory) { return _activeAppFactory == &appFactory; }
+    bool activeAppFactoryIsNoop() { return activeAppFactoryIsAlready(NOOP_APP_FACTORY); }
+
+    void _init()
+    {
+      hardResetAppAndFactory();
+    }
+
+  public:
+    AppRunner()
+    {
+      _init();
+    }
+
+    ~AppRunner()
+    {
+      quitApp();
+    }
+
+    void quitApp()
+    {
+      // Changes the active factory and app to the no-op app, then
+      // destroys the app that was already running. This should be done
+      // before starting and switching to a new app.
+      if (!activeAppFactoryIsNoop()) {
+        AppFactory * exitingAppFactory = _activeAppFactory;
+        App * exitingApp = _activeApp;
+
+        hardResetAppAndFactory();
+
+        exitingAppFactory->destroy(exitingApp);
+      }
+    }
+
+    void startApp(AppFactory & appFactory)
+    {
+      quitApp();
+      _activeAppFactory = &appFactory;
+      _activeApp = _activeAppFactory->create();
+      updatePenListener();
+    }
+
+    void update()
+    {
+      _activeApp->update();
+    }
+};
+

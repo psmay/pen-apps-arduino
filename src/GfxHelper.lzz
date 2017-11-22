@@ -1,0 +1,89 @@
+
+#hdr
+#include "Config.h"
+#include <Adafruit_GFX.h>
+#end
+
+#src
+#define GETTEXTDIMENSIONS_BODY { \
+	Gfx.setTextWrap(false); \
+	int16_t x1, y1; \
+	uint16_t w, h; \
+	Gfx.getTextBounds(text, 0, 0, &x1, &y1, &w, &h); \
+	width = w; \
+	height = h; \
+}
+
+#define DRAWCENTEREDTEXT_BODY { \
+	coord_t w, h; \
+	getTextDimensions(text, w, h); \
+	setCursorForCentering(centerX, centerY, w, h); \
+	Gfx.print(text); \
+}
+#end
+
+
+class GfxHelper
+{
+  private:
+    static coord_t half(coord_t value)
+    {
+      return (value < 0) ? -(-value >> 1) : (value >> 1);
+    }
+
+    static coord_t adjustCenter(coord_t pos, coord_t size)
+    {
+      return pos - half(size);
+    }
+
+  public:
+    Adafruit_GFX & Gfx;
+
+    GfxHelper(Adafruit_GFX & gfx) : Gfx(gfx) {}
+
+    virtual ~GfxHelper() { }
+
+    inline coord_t width() { return Gfx.width(); }
+    inline coord_t height() { return Gfx.height(); }
+
+    coord_t centerX() { return half(width()); }
+    coord_t centerY() { return half(height()); }
+
+    void setCursorForCentering(coord_t x, coord_t y, coord_t subjectWidth, coord_t subjectHeight)
+    {
+      Gfx.setCursor(
+        adjustCenter(x, subjectWidth),
+        adjustCenter(y, subjectHeight)
+      );
+    }
+
+    void drawDoubleHLine(coord_t x, coord_t y, coord_t length, color_t color)
+    {
+      Gfx.drawFastHLine(x, y, length, color);
+      Gfx.drawFastHLine(x, y - 1, length, color);
+    }
+
+    void drawDoubleVLine(coord_t x, coord_t y, coord_t length, color_t color)
+    {
+      Gfx.drawFastVLine(x, y, length, color);
+      Gfx.drawFastVLine(x - 1, y, length, color);
+    }
+
+    void drawDoubleCrosshair(coord_t x, coord_t y, coord_t radius, color_t color)
+    {
+      coord_t top = y - radius;
+      coord_t left = x - radius;
+      coord_t length = radius << 1;
+
+      drawDoubleVLine(x, top, length, color);
+      drawDoubleHLine(left, y, length, color);
+    }
+
+    void getTextDimensions(const char * text, coord_t & width, coord_t & height) { GETTEXTDIMENSIONS_BODY; }
+
+    void getTextDimensions(const __FlashStringHelper * text, coord_t & width, coord_t & height) { GETTEXTDIMENSIONS_BODY; }
+
+
+    void drawCenteredText(const char * text, coord_t centerX, coord_t centerY) { DRAWCENTEREDTEXT_BODY; }
+    void drawCenteredText(const __FlashStringHelper * text, coord_t centerX, coord_t centerY) { DRAWCENTEREDTEXT_BODY; }
+};

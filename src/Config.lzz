@@ -1,0 +1,74 @@
+
+#hdr
+
+#include "Arduino.h"
+
+// The type of a screen or sensor coordinate.
+typedef int16_t coord_t;
+
+// A type that could contain a sum of several coord_t.
+typedef int_least32_t coord_calc_t;
+
+// The type of a color value (in this case, R5G6B5).
+typedef uint16_t color_t;
+
+// A type that could contain any color_t value or -1.
+typedef int_least32_t scolor_t;
+
+
+#include "EepromUtil.h"
+
+#end
+
+#src
+#include <EEPROM.h>
+#end
+
+namespace
+{
+  void zpdate(int address, coord_t value)
+  {
+    EepromUtil::update16BE(address, (uint16_t)value);
+  }
+
+  coord_t zet(int address)
+  {
+    return (coord_t) EepromUtil::get16BE(address);
+  }
+}
+
+static const int ADDRESS_X0 = 0;
+static const int ADDRESS_Y0 = 2;
+static const int ADDRESS_X1 = 4;
+static const int ADDRESS_Y1 = 6;
+
+namespace SensorEeprom
+{
+  void update(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
+  {
+    zpdate(ADDRESS_X0, x0);
+    zpdate(ADDRESS_Y0, y0);
+    zpdate(ADDRESS_X1, x1);
+    zpdate(ADDRESS_Y1, y1);
+  }
+
+  void get(coord_t & x0, coord_t & y0, coord_t & x1, coord_t & y1)
+  {
+    x0 = zet(ADDRESS_X0);
+    y0 = zet(ADDRESS_Y0);
+    x1 = zet(ADDRESS_X1);
+    y1 = zet(ADDRESS_Y1);
+  }
+}
+
+inline color_t RGB_TO_COLOR(uint8_t r, uint8_t g, uint8_t b)
+{
+  return (
+           ((UINT16_C(0xF8) & (r)) << 8) |
+           ((UINT16_C(0xFC) & (g)) << 3) |
+           ((UINT16_C(0xF8) & (b)) >> 3)
+         );
+}
+
+
+

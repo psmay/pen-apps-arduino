@@ -1,0 +1,55 @@
+
+#hdr
+#include "Arduino.h"
+
+#include "AppRunner.h"
+#include "Screen.h"
+#include "BootScreenApp.h"
+#include "FreeScreenApp.h"
+#include "CalibrationApp.h"
+#include "TouchSensor.h"
+#end
+
+class Provider
+{
+  public:
+    AppRunner appRunner;
+    Screen screen;
+    BootScreenAppFactory bootScreenAppFactory;
+	CalibrationAppFactory calibrationAppFactory;
+	FreeScreenAppFactory freeScreenAppFactory;
+
+    TouchSensor touchSensor;
+
+    void begin()
+    {
+      Serial.begin(9600);
+      Serial.println("Provider begin() underway");
+
+      Serial.print("Screen begin...");
+      screen.begin();
+      Serial.println("done");
+
+      switchToBootScreenApp();
+	  Serial.println("Switched to boot screen app");
+    }
+
+    void setRotation(int8_t orientation)
+    {
+      MappingRect screenRect;
+      screen.getRect(screenRect);
+      screen.setRotation(orientation);
+      touchSensor.setScreenRect(screenRect, orientation);
+    }
+
+    void update()
+    {
+      touchSensor.update();
+	  appRunner.update();
+    }
+
+    void switchToBootScreenApp() { appRunner.startApp(bootScreenAppFactory); }
+    void switchToCalibrationApp() { appRunner.startApp(calibrationAppFactory); }
+    void switchToMainApp() { appRunner.startApp(freeScreenAppFactory); }
+};
+

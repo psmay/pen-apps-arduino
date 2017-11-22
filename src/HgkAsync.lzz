@@ -1,0 +1,116 @@
+
+#src
+#include "Arduino.h"
+#end
+
+namespace HgkAsync
+{
+  class AsyncTask
+  {
+    protected:
+      AsyncTask() {}
+    public:
+      virtual ~AsyncTask() {}
+      virtual bool isComplete() = 0;
+      virtual bool run() = 0;
+  };
+
+  class AsyncTaskRunner
+  {
+    private:
+      AsyncTask * _task;
+    public:
+      AsyncTaskRunner() : _task(NULL) {}
+
+      // Returns true if there is a current task. (Note that a task is
+      // automatically discarded as it is completed.)
+      bool isActive()
+      {
+        return _task != NULL;
+      }
+
+      // Returns true if a task was actually discarded, false otherwise.
+      bool discard()
+      {
+        AsyncTask * taskToDiscard = _task;
+        _task = NULL;
+        delete taskToDiscard;
+        return (taskToDiscard != NULL);
+      }
+
+      // Returns true if a task had to be discarded to begin this task,
+      // false otherwise.
+      bool begin(AsyncTask * task)
+      {
+        bool discarded = discard();
+        _task = task;
+      }
+
+      // Returns true if there is a current task and the task runs to
+      // completion. (The task is automatically discarded after completing.)
+      // Returns false if there is no current task.
+      // Returns false if there is a current task but the task does not run
+      // to completion.
+      bool finish()
+      {
+        if ((_task != NULL) && _task->run()) {
+          discard();
+          return true;
+        }
+        return false;
+      }
+
+      ~AsyncTaskRunner()
+      {
+        discard();
+      }
+  };
+
+  class SimpleAsyncTask : public AsyncTask
+  {
+    private:
+      bool _isComplete;
+    protected:
+      SimpleAsyncTask() : _isComplete(false) {}
+      virtual bool check() = 0;
+    public:
+      virtual ~SimpleAsyncTask() {}
+      bool isComplete() { return _isComplete; }
+      bool run()
+      {
+        if (!_isComplete) {
+          _isComplete = check();
+        }
+        return _isComplete;
+      }
+  };
+
+  class StateAsyncTask : public AsyncTask
+  {
+    private:
+      bool _isComplete;
+      int _state;
+
+    protected:
+      StateAsyncTask() : _isComplete(false), _state(0) {}
+      virtual bool work(int & state) = 0;
+
+    public:
+      virtual ~StateAsyncTask()
+      {
+      }
+
+      bool isComplete() { return _isComplete; }
+      bool run()
+      {
+        if (!_isComplete) {
+          _isComplete = work(_state);
+        }
+        return _isComplete;
+      }
+  };
+
+
+}
+
+

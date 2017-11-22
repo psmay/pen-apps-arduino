@@ -1,0 +1,102 @@
+
+#hdr
+#include "Arduino.h"
+#include "SimpleTimeouts.h"
+#end
+
+// This timer has these states:
+//
+//	Set		    Finished
+//	false		x			Disabled
+//	true		false		Set and running
+//	true		true		Set and expired
+//
+// Note that isExpired() will always return false if the timer is unset.
+//
+// isExpired() will unset the timer by default if the timer has expired.
+// Call isExpired(false) to keep it set but expired.
+
+#src
+enum {
+  TIMER_DISABLED,
+  TIMER_RUNNING,
+  TIMER_EXPIRED
+};
+#end
+
+class PollableTimer
+{
+  private:
+    uint8_t _status;
+    long _deadline;
+
+    bool isExpired(long time, bool unsetIfFinished)
+    {
+      if (_status == TIMER_RUNNING) {
+        if (SimpleTimeouts::timePassed(_deadline, time)) {
+          _status = TIMER_EXPIRED;
+        }
+      }
+
+      if (_status == TIMER_EXPIRED && unsetIfFinished) {
+        _status = TIMER_DISABLED;
+        return true;
+      }
+
+      return _status == TIMER_EXPIRED;
+    }
+
+  public:
+    PollableTimer()
+    {
+      _status = TIMER_DISABLED;
+    }
+
+    void expireAt(unsigned long deadline)
+    {
+      _deadline = deadline;
+      _status = TIMER_RUNNING;
+    }
+
+    void expireIn(long duration)
+    {
+      expireAt(millis() + duration);
+    }
+
+    void expireNow()
+    {
+      expireIn(0);
+    }
+
+    void unset()
+    {
+      _status = TIMER_DISABLED;
+    }
+
+    bool isSet()
+    {
+      return _status != TIMER_DISABLED;
+    }
+
+    bool isExpired(bool unsetIfFinished = true)
+    {
+      return isExpired(millis(), unsetIfFinished);
+    }
+
+    bool isRunning(bool unsetIfFinished = false)
+    {
+      return isSet() && !isExpired(unsetIfFinished);
+    }
+
+    long timeRemaining()
+    {
+      long time = millis();
+      if (isExpired(time)) {
+        return 0;
+      }
+      else {
+        return _deadline - time;
+      }
+    }
+
+};
