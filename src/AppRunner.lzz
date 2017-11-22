@@ -69,6 +69,7 @@ class AppRunner
       _activeAppFactory = &appFactory;
       _activeApp = _activeAppFactory->create();
       updatePenListener();
+      _activeApp->begin();
     }
 
     void update()

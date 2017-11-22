@@ -8,7 +8,13 @@ class App : public PenListener
   public:
     App() {}
     virtual ~App() {}
+
+    // Called sometime after the constructor but before the first call to
+    // update().
+    virtual void begin() {}
+
+    // Called repeatedly (at arbitrary intervals) after the call to begin().
     virtual void update() {}
 
-	static App NoopApp;
+    static App NoopApp;
 };
