@@ -206,12 +206,12 @@ class CalibrationApp : public App
 
         bool getPoint(coord_t & x, coord_t & y)
         {
-			uint8_t oldstatus = _status;
+          uint8_t oldstatus = _status;
           checkExpiration();
-			  Serial.print("On getPoint, status started at ");
-			  Serial.print((int)oldstatus);
-			  Serial.print(" and became ");
-			  Serial.println((int)_status);
+          Serial.print("On getPoint, status started at ");
+          Serial.print((int)oldstatus);
+          Serial.print(" and became ");
+          Serial.println((int)_status);
 
           if (_status == SteadyPointGathererStatus::FINISHED) {
             x = _x;
@@ -263,11 +263,12 @@ class CalibrationApp : public App
           return false;
         }
 
-		bool nudge() {
-			uint8_t oldstatus = _status;
-			checkExpiration();
-			return (oldstatus == _status);
-		}
+        bool nudge()
+        {
+          uint8_t oldstatus = _status;
+          checkExpiration();
+          return (oldstatus == _status);
+        }
 
         SteadyPointGatherer()
         {
@@ -287,9 +288,10 @@ class CalibrationApp : public App
 
     SteadyPointGatherer steadyPointGatherer;
 
-	void restartSteadyPointGatherer() {
-		steadyPointGatherer.restart(TOUCH.getPenDown());
-	}
+    void restartSteadyPointGatherer()
+    {
+      steadyPointGatherer.restart(TOUCH.getPenDown());
+    }
 
     void updateSteadyPointStatusText()
     {
@@ -377,155 +379,136 @@ class CalibrationApp : public App
 
     [start_async_pp]
 
-    [class_name] CalibrationApp
+    [this_class] CalibrationApp
 
     [async_sub] expectTapAsync
-    TOUCH.expectTap();
-    [poll_until] TOUCH.tapOccurred();
+    //
+    {
+      TOUCH.expectTap();
+      [poll_until] TOUCH.tapOccurred();
+    }
     [end_async_sub]
 
 
     [async_sub] expectTapAsync
-    [param] coord_t & x
-    [param] coord_t & y
+    //
+    {
+      [param] coord_t & x
+      [param] coord_t & y
 
-    //TOUCH.expectTap();
-    //[poll_until] TOUCH.tapOccurred($x, $y)
-	$.restartSteadyPointGatherer();
-	[poll_until] $.steadyPointGatherer.getPoint($x, $y)
-
+      $.restartSteadyPointGatherer();
+      [poll_until] $.steadyPointGatherer.getPoint($x, $y)
+    }
     [end_async_sub]
 
 
     [async_sub] collectSampleAsync
+    //
+    {
 
-    [param] bool left;
-    [param] bool top;
-    [param] coord_calc_t & xa;
-    [param] coord_calc_t & ya;
+      [param] bool left;
+      [param] bool top;
+      [param] coord_calc_t & xa;
+      [param] coord_calc_t & ya;
 
-    [var] coord_t x;
-    [var] coord_t y;
+      [var] coord_t x;
+      [var] coord_t y;
 
-    $.drawScreen(F("Tap center of crosshair."), true, $left, $top);
-    [await] $.expectTapAsync($x, $y);
-    $xa += $x;
-    $ya += $y;
+      $.drawScreen(F("Tap center of crosshair."), true, $left, $top);
+      [await] $.expectTapAsync($x, $y);
+      $xa += $x;
+      $ya += $y;
 
+    }
     [end_async_sub]
 
 
-
-//	[async_sub] getSteadyPointAsync
-//
-//	[param] coord_t & x;
-//	[param] coord_t & y;
-//
-//	$.restartSteadyPointWatcher();
-//	[poll_until] $.pollSteadyPointWatcher($x, $y);
-//
-//	[end_async_sub]
-//
-//    [async_sub] collectSampleAsync
-//
-//    [param] bool left;
-//    [param] bool top;
-//    [param] coord_calc_t & xa;
-//    [param] coord_calc_t & ya;
-//
-//    [var] coord_t x;
-//    [var] coord_t y;
-//
-//    $.drawScreen(F("Tap center of crosshair."), true, $left, $top);
-//    [await] $.getSteadyPointAsync($x, $y);
-//    $xa += $x;
-//    $ya += $y;
-//
-//    [end_async_sub]
-
-
     [async_sub] runCalibrationAsync
-
-    [var] coord_calc_t _2X0;
-    [var] coord_calc_t _2Y0;
-    [var] coord_calc_t _2X1;
-    [var] coord_calc_t _2Y1;
-
-    $.canDrawTestDots = false;
-
-    $_2X0 = 0;
-    $_2Y0 = 0;
-    $_2X1 = 0;
-    $_2Y1 = 0;
-
-    $.drawScreen(F("Tap screen to start."));
-    GFX.setCursor(0, 0);
-    GFX.setTextWrap(true);
-    GFX.println("Current settings:");
-    $.printSensorRect();
-    GFX.println(F("Press reset to keep"));
-    GFX.println(F("current values."));
-
-    [await] $.expectTapAsync()
-
-    [await] $.collectSampleAsync(true, true, $_2X0, $_2Y0);
-    [await] $.collectSampleAsync(false, true, $_2X1, $_2Y0);
-    [await] $.collectSampleAsync(false, false, $_2X1, $_2Y1);
-    [await] $.collectSampleAsync(true, false, $_2X0, $_2Y1);
-
-
-    $.clearScreen();
-    GFX.setCursor(0, 0);
-    GFX.setTextWrap(true);
+    //
     {
-      MappingRect sensorRect, screenRect;
 
-      computeSensorRect(sensorRect, $_2X0, $_2Y0, $_2X1, $_2Y1);
-      TOUCH.setSensorRect(sensorRect);
+      [var] coord_calc_t _2X0;
+      [var] coord_calc_t _2Y0;
+      [var] coord_calc_t _2X1;
+      [var] coord_calc_t _2Y1;
 
-      SCREEN.getRect(screenRect);
-      TOUCH.setScreenRect(screenRect, 0, true);
+      $.canDrawTestDots = false;
 
-      //$.ourContext.setInput(sensorRect);
-      //$.ourContext.setOutput(screenRect, 0);
+      $_2X0 = 0;
+      $_2Y0 = 0;
+      $_2X1 = 0;
+      $_2Y1 = 0;
+
+      $.drawScreen(F("Tap screen to start."));
+      GFX.setCursor(0, 0);
+      GFX.setTextWrap(true);
+      GFX.println("Current settings:");
+      $.printSensorRect();
+      GFX.println(F("Press reset to keep"));
+      GFX.println(F("current values."));
+
+      [await] $.expectTapAsync()
+
+      [await] $.collectSampleAsync(true, true, $_2X0, $_2Y0);
+      [await] $.collectSampleAsync(false, true, $_2X1, $_2Y0);
+      [await] $.collectSampleAsync(false, false, $_2X1, $_2Y1);
+      [await] $.collectSampleAsync(true, false, $_2X0, $_2Y1);
+
+
+      $.clearScreen();
+      GFX.setCursor(0, 0);
+      GFX.setTextWrap(true);
+      {
+        MappingRect sensorRect, screenRect;
+
+        computeSensorRect(sensorRect, $_2X0, $_2Y0, $_2X1, $_2Y1);
+        TOUCH.setSensorRect(sensorRect);
+
+        SCREEN.getRect(screenRect);
+        TOUCH.setScreenRect(screenRect, 0, true);
+      }
+      GFX.println("New settings:");
+      $.printSensorRect();
+
+      $.canDrawTestDots = true;
+
+      GFX.println("Tap screen to make dots appear.");
+      GFX.println("Tap in various locations to check calibration.");
+      GFX.println("If correct:");
+      GFX.println("    Tap and hold for 5 seconds ");
+      GFX.println("    to save settings and exit.");
+      GFX.println("If incorrect:");
+      GFX.println("    Press reset to discard new");
+      GFX.println("    settings and restart.");
+      $.tapAndHoldTimer.unset();
+
+      [poll_until] $.tapAndHoldTimer.isExpired()
+
+      $.clearScreen();
+      GFX.setCursor(0, 0);
+      GFX.setTextWrap(true);
+      $.printSensorRect();
+      GFX.print("Saving to EEPROM...");
+      TOUCH.saveSensorRect();
+      GFX.println("OK.");
+      GFX.println("Returning to boot screen...");
+      $.delayExitTimer.expireIn(3000);
+
+      [poll_until] $.delayExitTimer.isExpired()
+
+      provider.switchToBootScreenApp();
+
     }
-    GFX.println("New settings:");
-    $.printSensorRect();
-
-    $.canDrawTestDots = true;
-
-    GFX.println("Tap screen to make dots appear.");
-    GFX.println("Tap in various locations to check calibration.");
-    GFX.println("If correct:");
-    GFX.println("    Tap and hold for 5 seconds ");
-    GFX.println("    to save settings and exit.");
-    GFX.println("If incorrect:");
-    GFX.println("    Press reset to discard new");
-    GFX.println("    settings and restart.");
-    $.tapAndHoldTimer.unset();
-
-    [poll_until] $.tapAndHoldTimer.isExpired()
-
-    $.clearScreen();
-    GFX.setCursor(0, 0);
-    GFX.setTextWrap(true);
-    $.printSensorRect();
-    GFX.print("Saving to EEPROM...");
-    TOUCH.saveSensorRect();
-    GFX.println("OK.");
-    GFX.println("Returning to boot screen...");
-    $.delayExitTimer.expireIn(3000);
-
-    [poll_until] $.delayExitTimer.isExpired()
-
-    provider.switchToBootScreenApp();
-
     [end_async_sub]
 
 
     [async_sub] runAsync
-    [await] $.runCalibrationAsync();
+    //
+    {
+      [await] $.runCalibrationAsync();
+    }
     [end_async_sub]
+
     [end_async_pp]
 
     HgkAsync::AsyncTaskRunner runAsyncRunner;

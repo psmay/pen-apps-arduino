@@ -127,7 +127,7 @@ my $LOOP_LABEL_PREFIX = "_ZZ_SM_LABEL_";
 my $in_pp = 0;
 my $plain_located = 0;
 
-my $class_name = undef;
+my $this_class_name = undef;
 
 my %sub_name_variants = ();
 
@@ -299,8 +299,8 @@ while(<>) {
 		$pp_line_stripped = $pp_line;
 		for($pp_line_stripped) {
 			s#//.*$##g;
-			s/^(?:\s*;)+\s*//g;
-			s/(?:\s*;)+\s*$//g;
+			s/^(?:\s*[;{}])+\s*//g;
+			s/(?:\s*[;{}])+\s*$//g;
 			s/^\s+$//g;
 		}
 	}
@@ -323,15 +323,15 @@ while(<>) {
 				print $line . "\n";
 			}
 		}
-		elsif($pp_command eq 'class_name') {
+		elsif($pp_command eq 'this_class') {
 			if(in_sub) {
-				croak "Cannot change class name inside sub";
+				croak "Cannot change *this class name inside sub";
 			}
 			if($pp_line_stripped eq '') {
-				$class_name = undef;
+				$this_class_name = undef;
 			}
 			else {
-				$class_name = annot(value => $pp_line_stripped);
+				$this_class_name = annot(value => $pp_line_stripped);
 			}
 		}
 		elsif($pp_command eq 'access') {
@@ -384,7 +384,7 @@ while(<>) {
 				croak "$pp_command does not currently support nameless subs";
 			}
 			push_new_sub;
-			current_sub->{class} = $class_name;
+			current_sub->{class} = $this_class_name;
 			current_sub->{name} = annot(value => $pp_line_stripped);
 		}
 		elsif($pp_command eq 'end_async_sub') {
