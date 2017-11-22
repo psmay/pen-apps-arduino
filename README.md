@@ -4,7 +4,7 @@ pen-apps-arduino
 License
 =======
 
-(The license that follows is (the OSI-approved version of the MIT License)[https://opensource.org/licenses/MIT], which is also known as the Expat License.)
+(The license that follows is [the OSI-approved version of the MIT License](https://opensource.org/licenses/MIT), which is also known as the Expat License.)
 
 Copyright © 2017 Peter S. May
 
